@@ -1,0 +1,47 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: ocp4-etcd-backup-script
+  namespace: openshift-etcd-backup
+data:
+  etcd-backup.sh: |
+    #!/bin/sh
+    oc login --token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT --insecure-skip-tls-verify
+    NODE=$(oc get nodes -l node-role.kubernetes.io/master | grep -m 1 "master" | awk {'print $1'})
+    echo "Starting the ETCD backup on node ${NODE}"
+    oc debug node/${NODE} -- chroot /host /usr/local/bin/cluster-backup.sh /home/core/assets/backup
+---
+kind: CronJob
+apiVersion: batch/v1beta1
+metadata:
+  name: ocp4-etcd-backup
+  namespace: openshift-etcd-backup
+spec:
+  schedule: '@daily'
+  concurrencyPolicy: Allow
+  suspend: false
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccount: backup-sa
+          serviceAccountName: backup-sa
+          volumes:
+          - name: script
+            configMap:
+              name: ocp4-etcd-backup-script
+          containers:
+            - name: csr-autoprove
+              image: quay.io/openshift/origin-cli:4.7
+              volumeMounts:
+                - name: script
+                  mountPath: /usr/etcd-backup
+              command:
+              - /bin/sh
+              - /usr/etcd-backup/etcd-backup.sh
+              imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          terminationGracePeriodSeconds: 30
+          dnsPolicy: ClusterFirst
+          securityContext: {}
+          schedulerName: default-scheduler
