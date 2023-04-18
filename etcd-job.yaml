@@ -1,0 +1,46 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: ocp4-etcd-backup-script
+  namespace: openshift-etcd-backup
+data:
+  etcd-backup.sh: |
+    #!/bin/sh
+    oc login --token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT --insecure-skip-tls-verify
+    NODE=$(oc get nodes -l node-role.kubernetes.io/master | grep -m 1 "master" | awk {'print $1'})
+    #TIMESTAMP=$(date +%Y-%m-%d)
+    echo "Starting the ETCD backup on node ${NODE}"
+    oc debug node/${NODE} -- chroot /host ##Mount NFS path
+    oc debug node/${NODE} -- chroot /host /usr/local/bin/cluster-backup.sh /<PathToNFS>/backup
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ocp4-etcd-backup
+  namespace: openshift-etcd-backup
+spec:
+  parallelism: 1    
+  completions: 1    
+  activeDeadlineSeconds: 1800 
+  backoffLimit: 6   
+  template:         
+    metadata:
+      name: ocp4-etcd-backup
+    spec:
+      serviceAccount: backup-sa
+      serviceAccountName: backup-sa
+      volumes:
+      - name: script
+        configMap:
+          name: ocp4-etcd-backup-script
+      containers:
+      - name: etcd-backup
+        image: quay.io/openshift/origin-cli:4.11
+        volumeMounts:
+          - name: script
+            mountPath: /usr/etcd-backup
+        command:
+        - /bin/sh
+        - /usr/etcd-backup/etcd-backup.sh
+        imagePullPolicy: IfNotPresent
+      restartPolicy: OnFailure    

@@ -31,7 +31,7 @@ spec:
             configMap:
               name: ocp4-etcd-backup-script
           containers:
-            - name: csr-autoprove
+            - name: etcd-backup
               image: quay.io/openshift/origin-cli:4.7
               volumeMounts:
                 - name: script
